@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd /home/pi/bee_system_mast/webinterface
+sudo python3 -m http.server &
+cd /home/pi/bee_system_mast/bee_system_mast
+sudo python3 core.py
