@@ -7,7 +7,6 @@
     top:90px;
     width:300px;
     height:225px;
-    background-size: 300px 225px;
     background-image:url("nodata.png");
 }
 #config {
@@ -23,7 +22,6 @@
     top:90px;
     width:300px;
     height:225px;
-    background-size: 300px 225px;
     background-image:url("nodata.png");
 }
 #noflash_title {
@@ -79,7 +77,7 @@
 
 <h3>Bumblebee Tracking System</h3>
 <div id="config">
-<input id="url" value="" />
+<input id="url" value="10.3.141.1:5000" />
 <button id="startup">Startup</button>
 <br/>
 Capture:
@@ -91,6 +89,8 @@ Interval <input id="interval" value=3 size=2/> seconds
 <button id="download" class="refreshimages">Download</button>
 <button id="imagedown" class="refreshimages">&lt;</button>
 <button id="imageup" class="refreshimages">&gt;</button>
+<button id="imagedownx10" class="refreshimages">&lt;&lt;</button>
+<button id="imageupx10" class="refreshimages">&gt;&gt;</button>
 <br />
 <input type="checkbox" id="latestimage">Update to latest image</input>
 <br />
@@ -103,6 +103,11 @@ Blocksize: <input id="blocksize" value="20" size="5" />pixels<br />
 Stepsize: <input id="stepsize" value="10" size="5" />pixels<br />
 Offset: <input id="offset" value="3" size="5" />pixels<br />
 SkipCalc: <input id="skipcalc" value="0" size="2" /><br />
+SearchCount: <input id="searchcount" value="1" size="2" />
+<br />
+Start: <input id="startx" value="100" size="4" /><input id="starty" value="100" size="4" />
+<br />
+End: <input id="endx" value="100" size="4" /><input id="endy" value="100" size="4" />
 <button id="set">Set</button>
 
 <br/>
@@ -125,7 +130,6 @@ Status: <span id="status">Offline</span>
 <span id="trackingresults">[no tracking results]</span>
 
 <script>
-
 function getdatestring() {
     //https://stackoverflow.com/a/25835182
     var d = new Date();
@@ -142,11 +146,9 @@ function getdatestring() {
     st = curr_year + "-" + curr_month + "-" + curr_day + "T" + curr_hour + ":" + curr_min + ":" + curr_sec;
     return st   
 }
-
+    
 image = 0
 trackingimagecount = 0
-$("input#url").val(window.location.hostname+":5000")
-
 $('button#startup').click(function(){
     $('span#status').text('Starting up...');
     url = "http://"+$('input#url').val()+"/startup/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+getdatestring();
@@ -187,6 +189,8 @@ $('button#stop').click(function(){
 });
 $('button#imageup').click(function(){image=image+1;})
 $('button#imagedown').click(function(){image=image-1;})
+$('button#imageupx10').click(function(){image=image+10;})
+$('button#imagedownx10').click(function(){image=image-10;})
 
 setInterval(function(){ 
     url = "http://"+$('input#url').val()+"/gettrackingimagecount";
@@ -213,73 +217,19 @@ setInterval(function(){
     //code goes here that will be run every 5 seconds.    
 }, 1000);
 
-function convertJSONtoImageURL(data) {
-    img = data['image']
-    tracking = data['tracking']
-    height = img.length
-    width = img[0].length
-
-    var canvas=document.createElement("canvas");
-    var ctx=canvas.getContext("2d");
-
-    // size the canvas to your desired image
-    canvas.width=width;
-    canvas.height=height;
-
-    // get the imageData and pixel array from the canvas
-    var imgData=ctx.getImageData(0,0,width,height);
-    var imdata=imgData.data;
-
-    // manipulate some pixel elements
-    row = 0;
-    col = 0;
-    scale = 255/$('input#maxval').val()
-    x=tracking[0][0]/10
-    y=tracking[0][1]/10
-
-    for(var i=0;i<imdata.length;i+=4){
-        c = img[row][col]*scale;
-        if (c>255) {c=255;}
-        cr = c;
-        cg = c;
-        cb = c;
-        if ((col>y-5) && (col<y+5) && (row>x-5) && (row<x+5)) {cr=255; cg=255; cb=0;}
-        imdata[i]=cr;
-        imdata[i+1] = cg;
-        imdata[i+2] = cb;
-        imdata[i+3]=255; // make this pixel opaque
-        
-        col = col + 1;
-        if (col>=width) {
-          col = 0;
-          row = row + 1;
-        }
-    }
-    
-
-    // put the modified pixels back on the canvas
-    ctx.putImageData(imgData,0,0);
-    return "url('"+canvas.toDataURL()+"')";
-}
-
-
-$('button.refreshimages').click(function(){refreshimages();});
-
-$('input#maxval').bind('input',function() {refreshimages();});
-function refreshimages(){
+$('button.refreshimages').click(function(){
     $('span#index').text(image+1);//have to add one as python is zero indexed
     $('span#trackingimagecount').text(trackingimagecount);
     $('span#status').text('Downloading...');
+    url = "http://"+$('input#url').val()+"/gettrackingimage/"+image+"/0/"+$('input#maxval').val()+"/1";
+    $('#flash_image').css("background-image","url('"+url+"')");
+    url = "http://"+$('input#url').val()+"/gettrackingimage/"+image+"/1/"+$('input#maxval').val()+"/1";
+    $('#noflash_image').css("background-image","url('"+url+"')");
     
-    
-    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/0/1";
-    $.getJSON(url, function(data) {$('#flash_image').css("background-image",convertJSONtoImageURL(data)); });
-    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/1/1";
-    $.getJSON(url, function(data) {$('#noflash_image').css("background-image",convertJSONtoImageURL(data)); });
-    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/0/0";
-    $.getJSON(url, function(data) {$('#flash_image_centre').css("background-image",convertJSONtoImageURL(data)); });
-    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/1/0";
-    $.getJSON(url, function(data) {$('#noflash_image_centre').css("background-image",convertJSONtoImageURL(data)); });
+    url = "http://"+$('input#url').val()+"/gettrackingimage/"+image+"/0/"+$('input#maxval').val()+"/0";
+    $('#flash_image_centre').css("background-image","url('"+url+"')");
+    url = "http://"+$('input#url').val()+"/gettrackingimage/"+image+"/1/"+$('input#maxval').val()+"/0";
+    $('#noflash_image_centre').css("background-image","url('"+url+"')");
     
     url = "http://"+$('input#url').val()+"/imagestats/"+image
     $.ajax({
@@ -300,7 +250,7 @@ function refreshimages(){
       },
       error: function(jqXHR, status, errorThrown){$('span#status').text('Download Error');}
     });*/
-}
+});
 $('button#setinterval').click(function(){
     $('span#status').text('Setting...');
     url = "http://"+$('input#url').val()+"/setinterval/"+$('input#interval').val();
@@ -314,7 +264,7 @@ $('button#setinterval').click(function(){
 });
 $('button#set').click(function(){
     $('span#status').text('Setting...');
-    url = "http://"+$('input#url').val()+"/setcamera/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+$('input#blocksize').val()+"/"+$('input#offset').val()+"/"+$('input#stepsize').val()+"/"+$('input#skipcalc').val();
+    url = "http://"+$('input#url').val()+"/setcamera/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+$('input#blocksize').val()+"/"+$('input#offset').val()+"/"+$('input#stepsize').val()+"/"+$('input#skipcalc').val()+"/"+$('input#searchcount').val()+"/"+$('input#startx').val()+"/"+$('input#starty').val()+"/"+$('input#endx').val()+"/"+$('input#endy').val();
     $.ajax({
       url: url,
       success: function(data, status, jqXHR){

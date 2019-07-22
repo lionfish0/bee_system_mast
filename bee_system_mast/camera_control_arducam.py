@@ -1,34 +1,75 @@
 import sys
-import os
 import time
-import threading
 import numpy as np
-import signal
-import json
-
-import sys
-sys.path.insert(0, "/home/pi/ArduCAM_USB_Camera_Shield/RaspberryPi/Python/External_trigger_demo") #to do - this is not very good.
-
-import ArducamSDK
-from QueueBuffer import QueueBuffer as QB
+from multiprocessing import Queue
+import gc
+from datetime import datetime as dt
 from bee_system_mast.photoresult import PhotoResult
-     
-        
+from QueueBuffer import QueueBuffer as QB
+import json
+sys.path.insert(0, "/home/pi/ArduCAM_USB_Camera_Shield/RaspberryPi/Python/External_trigger_demo") #to do - this is not very good.
+import ArducamSDK
+import os
 
 class Camera_Control():
     def set_exposure(self,exposure):
-        #self.camera.set_exposure_time(exposure)#us
-        setval = round(exposure/22.22)
-        print(setval)
-        ArducamSDK.Py_ArduCam_writeSensorReg(self.handle,0x3012,setval)
-        print(ArducamSDK.Py_ArduCam_readSensorReg(self.handle,0x3012))
-
-    def set_gain(self,gain):
-        #assert False, "NOT IMPLEMENTED"    
-        #self.camera.set_gain(gain)
-        #0x20 = 32 = no gain, 
-        ArducamSDK.Py_ArduCam_writeSensorReg(self.handle,0x305e,round(32*gain))
+        print("set exposure")
+        self.camera_config_queue.put({'instruction':'exposure', 'exposure':exposure})
         
+    def set_gain(self,gain):
+        self.camera_config_queue.put({'instruction':'gain', 'gain':gain})
+
+    def print_status(self):
+        print("no status report implemented.")
+        
+    def __init__(self,blink_control=None,serialtouse=None,config_file_name = "AR0135_1280x964_ext_trigger_M.json"):
+        if not os.path.exists(config_file_name):
+            print("Config file does not exist.")
+            exit()
+        
+        devices_num,index,serials = ArducamSDK.Py_ArduCam_scan()
+        print("Found %d devices"%devices_num)
+        self.indextouse = None
+        for i in range(devices_num):
+            datas = serials[i]
+            serial = ""
+            for it,d in enumerate(datas[0:12]):
+                serial = serial + "%c" % d
+                if (it%4)==3 and it<11: serial = serial+"-"
+            if serialtouse is None:
+                if i==0: usethis=True
+            else:
+                if serial == serialtouse: usethis=True
+            if usethis: self.indextouse=i
+            print("Index:",index[i],"Serial:",serial,"Use:",usethis)
+            
+        time.sleep(2)
+            
+        self.handle = self.camera_initFromFile(config_file_name)
+        if self.handle != None:
+            ret_val = ArducamSDK.Py_ArduCam_setMode(self.handle,ArducamSDK.EXTERNAL_TRIGGER_MODE)
+            if(ret_val == ArducamSDK.USB_BOARD_FW_VERSION_NOT_SUPPORT_ERROR):
+                print("USB_BOARD_FW_VERSION_NOT_SUPPORT_ERROR")
+                exit(0)
+    
+        self.prs = QB()
+        self.blink_control = blink_control
+        self.camera_config_queue = Queue()
+          
+    def camera_config_worker(self,camera):#awkwardly need this to allow other processes to update camera config
+        print("Camera config worker started")
+        while True:
+            command = self.camera_config_queue.get()
+            print("received command")
+            if command['instruction']=='exposure':
+                #self.camera.set_exposure_time(exposure)#us
+                setval = round(exposure/22.22)
+                print(setval)
+                ArducamSDK.Py_ArduCam_writeSensorReg(self.handle,0x3012,setval)
+                print(ArducamSDK.Py_ArduCam_readSensorReg(self.handle,0x3012))
+            if command['instruction']=='gain':
+                ArducamSDK.Py_ArduCam_writeSensorReg(self.handle,0x305e,round(32*gain))
+            print(command)
 
     def configBoard(self,handle,fileNodes):
         for i in range(0,len(fileNodes)):
@@ -41,7 +82,7 @@ class Camera_Control():
             for j in range(0,len(fileNode[4])):
                 buffs.append(int(fileNode[4][j],16))
             ArducamSDK.Py_ArduCam_setboardConfig(handle,int(command,16),int(value,16),int(index,16),int(buffsize,16),buffs)
-
+                
     def writeSensorRegs(self,handle,fileNodes):
         for i in range(0,len(fileNodes)):
             fileNode = fileNodes[i]      
@@ -139,7 +180,6 @@ class Camera_Control():
         self.prs.put(PhotoResult(im,direction,flash))
         #self.ascii_draw_image(im[0::10,0::5])
         
-        
     def ascii_draw_image(self, img):
         symbol = "$@B\%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "[::-1]
         st = ""
@@ -152,49 +192,14 @@ class Camera_Control():
                     v=0            
                 st = st + symbol[int(v)]
             st = st + "\n"
-        print(st)
-        
-    def print_status(self):
-        print("no status report implemented.")
-        
-    def __init__(self,blink_control=None,serialtouse=None,config_file_name = "AR0135_1280x964_ext_trigger_M.json"):
-        if not os.path.exists(config_file_name):
-            print("Config file does not exist.")
-            exit()
-        
-        devices_num,index,serials = ArducamSDK.Py_ArduCam_scan()
-        print("Found %d devices"%devices_num)
-        self.indextouse = None
-        for i in range(devices_num):
-            datas = serials[i]
-            serial = ""
-            for it,d in enumerate(datas[0:12]):
-                serial = serial + "%c" % d
-                if (it%4)==3 and it<11: serial = serial+"-"
-            if serialtouse is None:
-                if i==0: usethis=True
-            else:
-                if serial == serialtouse: usethis=True
-            if usethis: self.indextouse=i
-            print("Index:",index[i],"Serial:",serial,"Use:",usethis)
-            
-        time.sleep(2)
-            
-        self.handle = self.camera_initFromFile(config_file_name)
-        if self.handle != None:
-            ret_val = ArducamSDK.Py_ArduCam_setMode(self.handle,ArducamSDK.EXTERNAL_TRIGGER_MODE)
-            if(ret_val == ArducamSDK.USB_BOARD_FW_VERSION_NOT_SUPPORT_ERROR):
-                print("USB_BOARD_FW_VERSION_NOT_SUPPORT_ERROR")
-                exit(0)
-        self.prs = QB()
-        self.blink_control = blink_control
-          
-    def worker(self):  
+        print(st)    
+                    
+    def worker(self):
         while True:
             ArducamSDK.Py_ArduCam_softTrigger(self.handle)
             if ArducamSDK.Py_ArduCam_isFrameReady(self.handle):
                 self.getSingleFrame(self.handle)
-            
+          
 if __name__ == "__main__":
     c = Camera_Control()
     c.worker()

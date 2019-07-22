@@ -1,8 +1,9 @@
-from flask import Flask, make_response, jsonify
-from bee_system_mast.blink_control import Blink_Control
-from bee_system_mast.camera_control_arducam import Camera_Control
-from bee_system_mast.tracking_control import Tracking_Control
+from flask import Flask, make_response
+from bee_system.blink_control import Blink_Control, configure_gpio
+from bee_system.camera_control import Camera_Control
+from bee_system.tracking_control import Tracking_Control
 import multiprocessing
+import threading
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -13,8 +14,6 @@ import base64
 import sys
 import os
 from mem_top import mem_top
-from datetime import datetime as dt
-import subprocess
 
 app = Flask(__name__)
 CORS(app)
@@ -27,25 +26,19 @@ import logging
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-@app.route('/startup/<int:exposure>/<int:gain>/<string:timestring>')
-def startup(exposure,gain,timestring):
-    d = dt.strptime(timestring,"%Y-%m-%dT%H:%M:%S")
-    #NOTE: This requires:
-    #        sudo visudo
-    # then add:
-    #        pi ALL=(ALL) NOPASSWD: /bin/date
-    os.system('sudo /bin/date -s %s' % d.strftime("%Y-%m-%dT%H:%M:%S"))
+@app.route('/startup/<int:exposure>/<int:gain>')
+def startup(exposure,gain):
     global startupdone
     if startupdone:
         return "Already Running"
-
+    configure_gpio()
     global blink_control
     blink_control = Blink_Control()
     t = multiprocessing.Process(target=blink_control.worker)#,args=(blink_control.run_blink,))
     t.start()
     global cam_control
     cam_control = Camera_Control()
-    t = multiprocessing.Process(target=cam_control.worker)
+    t = multiprocessing.Process(target=cam_control.worker,args=(exposure,gain))
     t.start()
     global tracking_controls
     tracking_results = []
@@ -124,7 +117,7 @@ def nextimage():
         return "done"
 
     
-@app.route('/getcurrentimage/<int:img>/<int:cmax>')
+@app.route('/getcurrentimage/<int:img>/<int:cmax>/<int:raw>')
 def getcurrentimage(img,cmax):
     if not startupdone:
         return "Not online"
@@ -139,15 +132,19 @@ def getcurrentimage(img,cmax):
     #msg += "%0.5f\n" % (np.mean(pair[0].img))
     #msg += "%0.2f\n" % (np.mean(pair[1].img))
     #return msg
-    fig = Figure(figsize=[3,2.25])
-    axis = fig.add_subplot(1, 1, 1)   
-    axis.imshow(pair[img].img[::10,::10],clim=[0,cmax])
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    canvas = FigureCanvas(fig)
-    output = io.BytesIO()
-    fig.patch.set_alpha(0)
-    canvas.print_png(output)
-    response = make_response(output.getvalue())
+    rawimg = pair[img].img[::10,::10]
+    if raw:
+        response = str(rawimg)
+    else:
+        fig = Figure(figsize=[3,2.25])
+        axis = fig.add_subplot(1, 1, 1)   
+        axis.imshow(rawimg,clim=[0,cmax])
+        fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
+        canvas = FigureCanvas(fig)
+        output = io.BytesIO()
+        fig.patch.set_alpha(0)
+        canvas.print_png(output)
+        response = make_response(output.getvalue())
 
     response.mimetype = 'image/png'
     return response
@@ -166,7 +163,7 @@ def getsystemstatus():
     if startupdone:
         msg = ""
         msg += "Processing Queue: %d\n" % tracking_controls[0].camera_queue.qsize()
-        cpu_usage_string = subprocess.check_output('cat /proc/loadavg', shell=True)
+        cpu_usage_string = os.popen("cat /proc/loadavg").readline()
         msg += "CPU Usage:        %s" % cpu_usage_string        
         if len(tracking_controls[0].tracking_results)>0:
             msg += "\n\nDiagnostic Message from last tracking computation\n"
@@ -176,29 +173,8 @@ def getsystemstatus():
     else:
         return "0"
     
-@app.route('/getrawtrackingimage/<int:index>/<int:img>/<int:lowres>')
-def getrawtrackingimage(index,img,lowres):
-    if img<0 or img>1:
-        return "image must be 0 or 1"
-    if (index>=len(tracking_controls[0].tracking_results)) or (index<0):
-        return "out of range"
-    
-    if lowres:    
-        pair = tracking_controls[0].tracking_results[index]['lowresimages']
-    else:
-        pair = tracking_controls[0].tracking_results[index]['highresimages']
-    trackingresults = []    
-    for i,loc in enumerate(tracking_control.tracking_results[index]['maxvals']):
-        print(i)
-        trackingresults.append([int(loc['location'][0]),int(loc['location'][1]),int(loc['score'])])
-        
-    return jsonify({'image':pair[img].astype(int).tolist(),'tracking':trackingresults}) #TODO: add locations from below to JSON object
-    
-    
-    
-##########    
-@app.route('/gettrackingimage/<int:index>/<int:img>/<int:cmax>/<int:lowres>')
-def gettrackingimage(index,img,cmax,lowres):
+@app.route('/gettrackingimage/<int:index>/<int:img>/<int:cmax>/<int:lowres>/<int:raw>')
+def gettrackingimage(index,img,cmax,lowres,raw):
     if cmax<1 or cmax>255:
         return "cmax parameter must be between 1 and 255."
     if img<0 or img>1:
@@ -208,42 +184,54 @@ def gettrackingimage(index,img,cmax,lowres):
     
     if lowres:    
         pair = tracking_controls[0].tracking_results[index]['lowresimages']
-        fig = Figure(figsize=[3,2.25])        
+        figsize = [3,2.25]
     else:
         pair = tracking_controls[0].tracking_results[index]['highresimages']
-        fig = Figure(figsize=[2,2])
-    axis = fig.add_subplot(1, 1, 1)   
-    axis.imshow(pair[img],clim=[0,cmax])
-    
+        figsize = [2,2]
+    if not raw: 
+        fig = Figure(figsize=figsize)
+        axis = fig.add_subplot(1, 1, 1)   
+        axis.imshow(pair[img],clim=[0,cmax])
+    else:
+        rawimg = pair[img].copy()#slow?
+        
     
     
     if lowres:    
         marker = 'w+'
         for i,loc in enumerate(tracking_controls[0].tracking_results[index]['maxvals']):
-            axis.plot(loc['location'][1]/10,loc['location'][0]/10,marker,markersize=(10/(i+1)))
-            if i>3: marker = 'b+'
-            axis.plot(loc['location'][1]/10,loc['location'][0]/10,'xw',markersize=(loc['score']/5))            
+            if not raw:
+                axis.plot(loc['location'][1]/10,loc['location'][0]/10,marker,markersize=(10/(i+1)))
+                if i>3: marker = 'b+'
+                axis.plot(loc['location'][1]/10,loc['location'][0]/10,'xw',markersize=(loc['score']/5))
+            else:
+                rawimg[int(loc['location'][1]/10-(10/(i+1))):int(loc['location'][1]/10+(10/(i+1))),int(loc['location'][0]/10)]=255
+                rawimg[int(loc['location'][1]/10),int(loc['location'][0]/10-(10/(i+1))):int(loc['location'][0]/10+(10/(i+1)))]=255
+                rawimg[int(loc['location'][1]/10-(loc['score']/5)):int(loc['location'][1]/10+(loc['score']/5)),int(loc['location'][0]/10)]=255
+                rawimg[int(loc['location'][1]/10),int(loc['location'][0]/10-(loc['score']/5)):int(loc['location'][0]/10+(loc['score']/5))]=128
+
+                
     else:
         if img==0:
             #shift = tracking_controls[0].tracking_results[index]['shift']
-            axis.plot(pair[img].shape[0]/2,pair[img].shape[1]/2,'w+',markersize=20)
+            if not raw:
+                axis.plot(pair[img].shape[0]/2,pair[img].shape[1]/2,'w+',markersize=20)
+            else:
+                pass
         if img==1:
             axis.plot(pair[img].shape[0]/2,pair[img].shape[1]/2,'w+',markersize=20)
             
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    canvas = FigureCanvas(fig)
-    output = io.BytesIO()
-    fig.patch.set_alpha(0)
-    canvas.print_png(output)
-    response = make_response(output.getvalue())
-
-    response.mimetype = 'image/png'
-    return response    
-    
-    
-    
-    
-##########
+    if not raw:
+        fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
+        canvas = FigureCanvas(fig)
+        output = io.BytesIO()
+        fig.patch.set_alpha(0)
+        canvas.print_png(output)
+        response = make_response(output.getvalue())
+        response.mimetype = 'image/png'
+    else:
+        response = str(rawimg)
+    return response
 
 import pickle
 @app.route('/getpickleddataset.p')

@@ -1,21 +1,20 @@
 import time
 import RPi.GPIO as GPIO
-import threading
-
+import multiprocessing
 
 class Blink_Control:
-    def __init__(self):
-        """Controls flashes and servo pointing"""
+    def __init__(self,t=2.0):
+        self.manager = multiprocessing.Manager()
+        self.flashselection = self.manager.list()
         self.flash_select_pins = [2,3,14,15]
         self.trigger_pin = 4
+        self.flashselection.append(0)
+        self.flashselection.append(1)
+        self.flashselection.append(2)
+        self.flashselection.append(3)                        
+        self.t = multiprocessing.Value('d',t)
         self.preptime = 0.05
         self.triggertime = 0.001
-        self.totaltime = 1
-        self.flashselection = [0,1,2,3] #all of them.
-        
-        self.direction = None
-
-        
         GPIO.setmode(GPIO.BCM)
         for pin in self.flash_select_pins:
             GPIO.setup(pin, GPIO.OUT)
@@ -24,11 +23,9 @@ class Blink_Control:
         for pin in self.flash_select_pins:
             GPIO.output(pin, False)
         GPIO.output(self.trigger_pin, False)
-        self.run_blink = threading.Event()
-        
+        self.run_blink = multiprocessing.Event()
     
     def worker(self):
-        st = 0.03
         while (True):
             self.run_blink.wait()
             for flash in self.flashselection:
@@ -39,5 +36,4 @@ class Blink_Control:
             for pin in self.flash_select_pins:
                 GPIO.output(pin, False)
             GPIO.output(self.trigger_pin, False)
-            time.sleep(self.totaltime-self.triggertime-self.preptime)
-            print(self.totaltime-self.triggertime-self.preptime)
+            time.sleep(self.t.value-self.triggertime-self.preptime)
