@@ -102,6 +102,7 @@ Gain: <input id="gain" value="0" size="5" />dB<br />
 Blocksize: <input id="blocksize" value="20" size="5" />pixels<br />
 Stepsize: <input id="stepsize" value="10" size="5" />pixels<br />
 Offset: <input id="offset" value="3" size="5" />pixels<br />
+Search box size: <input id="searchbox" value="100" size="5" />pixels<br />
 SkipCalc: <input id="skipcalc" value="0" size="2" /><br />
 SearchCount: <input id="searchcount" value="1" size="2" />
 <br />
@@ -149,6 +150,7 @@ function getdatestring() {
     
 image = 0
 trackingimagecount = 0
+$("input#url").val(window.location.hostname+":5000")
 $('button#startup').click(function(){
     $('span#status').text('Starting up...');
     url = "http://"+$('input#url').val()+"/startup/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+getdatestring();
@@ -264,7 +266,7 @@ $('button#setinterval').click(function(){
 });
 $('button#set').click(function(){
     $('span#status').text('Setting...');
-    url = "http://"+$('input#url').val()+"/setcamera/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+$('input#blocksize').val()+"/"+$('input#offset').val()+"/"+$('input#stepsize').val()+"/"+$('input#skipcalc').val()+"/"+$('input#searchcount').val()+"/"+$('input#startx').val()+"/"+$('input#starty').val()+"/"+$('input#endx').val()+"/"+$('input#endy').val();
+    url = "http://"+$('input#url').val()+"/setcamera/"+$('input#exposure').val()+"/"+$('input#gain').val()+"/"+$('input#blocksize').val()+"/"+$('input#offset').val()+"/"+$('input#stepsize').val()+"/"+$('input#searchbox').val()+"/"+$('input#skipcalc').val()+"/"+$('input#searchcount').val()+"/"+$('input#startx').val()+"/"+$('input#starty').val()+"/"+$('input#endx').val()+"/"+$('input#endy').val();
     $.ajax({
       url: url,
       success: function(data, status, jqXHR){

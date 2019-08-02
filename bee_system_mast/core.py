@@ -28,6 +28,10 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 @app.route('/startup/<int:exposure>/<int:gain>/<string:timestring>')
+def startupint(exposure,gain,timestring):
+    return startup(exposure,gain,timestring)
+
+@app.route('/startup/<int:exposure>/<float:gain>/<string:timestring>')
 def startup(exposure,gain,timestring):
     d = dt.strptime(timestring,"%Y-%m-%dT%H:%M:%S")
     #NOTE: This requires:
@@ -71,8 +75,11 @@ def setinterval_int(interval):
     return setinterval(1.0*interval)
 
 
-@app.route('/setcamera/<int:exposure>/<int:gain>/<int:blocksize>/<int:offset>/<int:stepsize>/<int:skipcalc>/<int:searchcount>/<int:startx>/<int:starty>/<int:endx>/<int:endy>')
-def setcamera(exposure,gain,blocksize,offset,stepsize,skipcalc,searchcount,startx,starty,endx,endy):
+@app.route('/setcamera/<int:exposure>/<int:gain>/<int:blocksize>/<int:offset>/<int:stepsize>/<int:searchbox>/<int:skipcalc>/<int:searchcount>/<int:startx>/<int:starty>/<int:endx>/<int:endy>')
+def setcameraint(exposure,gain,blocksize,offset,stepsize,searchbox,skipcalc,searchcount,startx,starty,endx,endy):
+    return setcamera(exposure,gain,blocksize,offset,stepsize,searchbox,skipcalc,searchcount,startx,starty,endx,endy)
+@app.route('/setcamera/<int:exposure>/<float:gain>/<int:blocksize>/<int:offset>/<int:stepsize>/<int:searchbox>/<int:skipcalc>/<int:searchcount>/<int:startx>/<int:starty>/<int:endx>/<int:endy>')
+def setcamera(exposure,gain,blocksize,offset,stepsize,searchbox,skipcalc,searchcount,startx,starty,endx,endy):
 
     global startupdone
     if not startupdone:
@@ -83,9 +90,11 @@ def setcamera(exposure,gain,blocksize,offset,stepsize,skipcalc,searchcount,start
     cam_control.set_gain(gain)
     global tracking_controls
     print("Setting tracking parameters")
+    print(searchbox)
     for tracking_control in tracking_controls:
         tracking_control.blocksize.value = blocksize
         tracking_control.stepsize.value = stepsize
+        tracking_control.searchbox.value = searchbox     
         tracking_control.searchcount.value = searchcount
         tracking_control.startx.value = startx
         tracking_control.starty.value = starty
@@ -97,6 +106,7 @@ def setcamera(exposure,gain,blocksize,offset,stepsize,skipcalc,searchcount,start
         print("START and END: ")
         print(tracking_control.startx.value,tracking_control.starty.value)
         print(tracking_control.endx.value,tracking_control.endy.value)
+    print(tracking_controls[0].searchbox.value)
     return "Setup complete"
 
 @app.route('/')
@@ -165,7 +175,7 @@ def getsystemstatus():
     global startupdone
     if startupdone:
         msg = ""
-        msg += "Processing Queue: %d\n" % tracking_controls[0].camera_queue.qsize()
+        msg += "Processing Queue: %d\n" % tracking_controls[0].camera_queue.unpopped()
         cpu_usage_string = subprocess.check_output('cat /proc/loadavg', shell=True)
         msg += "CPU Usage:        %s" % cpu_usage_string        
         if len(tracking_controls[0].tracking_results)>0:

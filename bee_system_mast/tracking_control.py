@@ -70,6 +70,7 @@ class Tracking_Control():
         self.blocksize = Value('i',30)
         self.offset = Value('i',2)
         self.stepsize = Value('i',10)
+        self.searchbox = Value('i',100)
         self.skipcalc = Value('b',False)
         self.searchcount = Value('i',1)
         self.startx = Value('i',100)
@@ -125,7 +126,8 @@ class Tracking_Control():
 
         
     def analyse_image_pair(self,pair,save=True):
-            searchbox = 100
+            searchbox = self.searchbox.value
+            print("Searchbox size: %d" % searchbox)
             starttime = time.time()
             msg = ""
             msg += "Saving data:\n"
@@ -162,6 +164,9 @@ class Tracking_Control():
                 maxvals = []
                 for it in range(self.searchcount.value):
                     #print(".")
+                    print(done.shape)
+                    print(start,end)
+                    print(searchbox)
                     argmax = done[start[0]-searchbox:end[0]-searchbox,start[1]-searchbox:end[1]-searchbox].argmax()
                     p = np.array(np.unravel_index(argmax, done.shape))
                     p+=start-searchbox
@@ -178,7 +183,7 @@ class Tracking_Control():
                     maxvals.append({'val':maxval, 'location':p.copy(), 'sample_img':peak_sample_img,'score':score})
                     msg += " - Preparing stats"
                     msg += "peak at [%d, %d] = %d [score=%0.5f]\n" % (p[0],p[1],maxval,score)
-                    msg += ascii_draw(peak_sample_img)
+                    #msg += ascii_draw(peak_sample_img)
                     msg += "\n"
                     msg += "time: %0.4f\n" % (time.time()-starttime)
                  
