@@ -52,7 +52,7 @@ class Camera_Control():
                 print("USB_BOARD_FW_VERSION_NOT_SUPPORT_ERROR")
                 exit(0)
     
-        self.prs = QB()
+        self.prs = QB(20)
         self.blink_control = blink_control
         self.camera_config_queue = Queue()
           
@@ -157,7 +157,7 @@ class Camera_Control():
     def getSingleFrame(self,handle):
         #global running,Width,Height,save_flag,cfg,color_mode,totalFrames,save_raw
         count = 0
-        print("Take picture.")
+        #print("Take picture.")
         rtn_val,data,rtn_cfg = ArducamSDK.Py_ArduCam_getSingleFrame(handle)
         
         if rtn_val != 0:
@@ -168,8 +168,8 @@ class Camera_Control():
         if datasize == 0:
             print("data length zero!")
             return
-        print(datasize)
-        print(type(data))
+        #print(datasize)
+        #print(type(data))
         im = np.frombuffer(data,np.uint8,count = datasize).reshape(self.height,self.width)
         if self.blink_control is not None:
             direction = self.blink_control.direction
@@ -178,6 +178,7 @@ class Camera_Control():
             direction = None
             flash = None
         self.prs.put(PhotoResult(im,direction,flash))
+        print("Photo queue length: %d" % self.prs.unpopped())
         #self.ascii_draw_image(im[0::10,0::5])
         
     def ascii_draw_image(self, img):

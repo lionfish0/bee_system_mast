@@ -7,6 +7,7 @@
     top:90px;
     width:300px;
     height:225px;
+    background-size: 300px 225px;
     background-image:url("nodata.png");
 }
 #config {
@@ -22,6 +23,7 @@
     top:90px;
     width:300px;
     height:225px;
+    background-size: 300px 225px;
     background-image:url("nodata.png");
 }
 #noflash_title {
@@ -75,7 +77,7 @@
 <body>
 
 
-<h3>Bumblebee Tracking System</h3>
+<h3>Bumblebee Tracking System v2.0</h3>
 <div id="config">
 <input id="url" value="10.3.141.1:5000" />
 <button id="startup">Startup</button>
@@ -194,6 +196,8 @@ $('button#imagedown').click(function(){image=image-1;})
 $('button#imageupx10').click(function(){image=image+10;})
 $('button#imagedownx10').click(function(){image=image-10;})
 
+
+
 setInterval(function(){ 
     url = "http://"+$('input#url').val()+"/gettrackingimagecount";
     $.ajax({
@@ -219,7 +223,124 @@ setInterval(function(){
     //code goes here that will be run every 5 seconds.    
 }, 1000);
 
-$('button.refreshimages').click(function(){
+function drawpixel(imdata,x,y,width,height) {
+    pos = 4*(x+y*width)
+    imdata[pos] = 255
+    imdata[pos+1] = 255
+    imdata[pos+2] = 0
+}
+
+function drawcrosshair(imdata,track,imscale,width,height) {
+    x=Math.round(track[1]/imscale)
+    y=height-Math.round(track[0]/imscale)
+    for (xstep=x-10;xstep<x+10;xstep+=1) {
+        drawpixel(imdata,xstep,y,width,height)
+    }
+    for (ystep=y-10;ystep<y+10;ystep+=1) {
+        drawpixel(imdata,x,ystep,width,height)
+    }
+    console.log(pos)
+}
+
+function convertJSONtoImageURL(data,drawcrosshairs) {
+    img = data['image']
+    tracking = data['tracking']
+    height = img.length
+    width = img[0].length
+
+    var canvas=document.createElement("canvas");
+    var ctx=canvas.getContext("2d");
+
+    // size the canvas to your desired image
+    canvas.width=width;
+    canvas.height=height;
+
+    // get the imageData and pixel array from the canvas
+    var imgData=ctx.getImageData(0,0,width,height);
+    var imdata=imgData.data;
+
+    // manipulate some pixel elements
+    row = height-1;
+    col = 0;
+    scale = 255/$('input#maxval').val()
+
+    for(var i=0;i<imdata.length;i+=4){
+        c = img[row][col]*scale;
+        if (c>255) {c=255;}
+        imdata[i]=c;
+        imdata[i+1] = c;
+        imdata[i+2] = c;
+        imdata[i+3]=255; // make this pixel opaque
+        col = col + 1;
+        if (col>=width) {
+          col = 0;
+          row = row - 1;
+        }
+    }
+    
+    console.log(tracking.length)
+    if (drawcrosshairs) {
+        for (var i=0;i<tracking.length;i+=1){
+            drawcrosshair(imdata,tracking[i],10,width,height)
+        }
+    }
+
+    // put the modified pixels back on the canvas
+    ctx.putImageData(imgData,0,0);
+    return "url('"+canvas.toDataURL()+"')";
+}
+
+
+$('button.refreshimages').click(function(){refreshimages();});
+
+$('input#maxval').bind('input',function() {refreshimages();});
+function refreshimages(){
+    $('span#index').text(image+1);//have to add one as python is zero indexed
+    $('span#trackingimagecount').text(trackingimagecount);
+    $('span#status').text('Downloading...');
+    
+    
+    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/0/1";
+    $.getJSON(url, function(data) {$('#flash_image').css("background-image",convertJSONtoImageURL(data,1)); });
+    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/1/1";
+    $.getJSON(url, function(data) {$('#noflash_image').css("background-image",convertJSONtoImageURL(data,1)); });
+    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/0/0";
+    $.getJSON(url, function(data) {$('#flash_image_centre').css("background-image",convertJSONtoImageURL(data)); });
+    url = "http://"+$('input#url').val()+"/getrawtrackingimage/"+image+"/1/0";
+    $.getJSON(url, function(data) {$('#noflash_image_centre').css("background-image",convertJSONtoImageURL(data)); });
+    
+    url = "http://"+$('input#url').val()+"/imagestats/"+image
+    $.ajax({
+      url: url,
+      success: function(data, status, jqXHR){
+        $('span#trackingresults').text(data);
+      },
+      error: function(jqXHR, status, errorThrown){$('span#status').text('Download tracking results Error');}
+    });
+    
+    /*url = "http://"+$('input#url').val()+"/getsystemstatus"
+    $.ajax({
+      url: url,
+      success: function(data, status, jqXHR){
+        $('span#systemstatus').text("<pre>"+data+"</pre>");
+      },
+      error: function(jqXHR, status, errorThrown){$('span#status').text('Download systemstatus Error');}
+    });*/
+    
+   /* $.ajax({
+      url: url,/imagestats
+      success: function(data, status, jqXHR){
+        $('span#status').text('Downloaded');
+        if (data=="No new image") {$('span#status').text('No Image');}
+        //else {$('#flash_image').css("background-image","data:image/png,"+data);}
+        
+      },
+      error: function(jqXHR, status, errorThrown){$('span#status').text('Download Error');}
+    });*/
+}
+
+
+$('button.oldrefreshimages').click(function(){
     $('span#index').text(image+1);//have to add one as python is zero indexed
     $('span#trackingimagecount').text(trackingimagecount);
     $('span#status').text('Downloading...');

@@ -63,7 +63,7 @@ class Tracking_Control():
         """
         ...
         """
-        print("Creating Tracking Object")
+        #print("Creating Tracking Object")
         self.camera_queue = camera_queue
         self.tracking_results_queue = Queue()
         self.tracking_results = tracking_results
@@ -102,48 +102,60 @@ class Tracking_Control():
         os.nice(20) #these shouldn't be priorities
         
         while True:
-            print("Awaiting image")
+            #print("Awaiting image")
             #Awaiting image for processing [blocking]
             
             index, img = self.camera_queue.pop()
-            print(self.camera_queue.inbound.qsize())
-            print(len(self.camera_queue.buffer))
-            print(self.camera_queue.unpopped())
-            print(index)
 
-            print("New image: %d" % index)
+            #print(self.camera_queue.inbound.qsize())
+            #print(len(self.camera_queue.buffer))
+            #print(self.camera_queue.unpopped())
+            #print(index)
+
+            #print("New image: %d" % index)
             #we'll just look at the current and the previous photo (if it was in the same direction)
             if index<1:
-                print("not enough images")
+                #print("not enough images")
                 continue
 
+
+            
+            print(">>>%d" % index)
+            tempstarttime = time.time()
             oldimg = self.camera_queue.read(index-1)
             if oldimg.direction!=img.direction:
-                print("previous image was in a different direction")
+                #print("previous image was in a different direction")
                 continue
-            self.tracking_results_queue.put(self.analyse_image_pair([img,oldimg]))
-        
+
+            res = self.analyse_image_pair([img,oldimg])
+            self.tracking_results_queue.put(res)
+            print("<<<%d [%d+%d] (%0.2fs)" % (index,self.camera_queue.unpopped(),self.camera_queue.newitemindex.value-index,time.time()-tempstarttime))
+            if (time.time()-tempstarttime>5):
+                print(res['msg'])
+                print("--------") 
 
         
     def analyse_image_pair(self,pair,save=True):
             searchbox = self.searchbox.value
-            print("Searchbox size: %d" % searchbox)
+            #print("Searchbox size: %d" % searchbox)
             starttime = time.time()
             msg = ""
             msg += "Saving data:\n"
             msg += "time: %0.4f\n" % (time.time()-starttime)
             #print(pair[0])
             timestr = time.strftime("%Y%m%d_%H:%M:%S")
-            np.save(open('raw_%s_0.np' % timestr,'wb'),pair[0].img.astype(np.byte))
-            msg += "time: %0.4f\n" % (time.time()-starttime)
-            np.save(open('raw_%s_1.np' % timestr,'wb'),pair[1].img.astype(np.byte))
+            #msg += "time: %0.4f\n" % (time.time()-starttime)            
+            #np.save(open('raw_%s_0.np' % timestr,'wb'),pair[0].img.astype(np.byte))
+            #msg += "time: %0.4f\n" % (time.time()-starttime)
+            #np.save(open('raw_%s_1.np' % timestr,'wb'),pair[1].img.astype(np.byte))
             msg += "time: %0.4f\n" % (time.time()-starttime)
             msg += "Done\n"
             msg += "Processing Images\n"
             msg += "time: %0.4f\n" % (time.time()-starttime)
             msg += "Computing Shift (stepsize=%d)\n" % self.stepsize.value
-            shift = rd.getshift(pair[0].img,pair[1].img,step=self.stepsize.value,searchbox=searchbox)
+            shift = rd.ensemblegetshift(pair[0].img,pair[1].img,step=self.stepsize.value,searchbox=searchbox,searchblocksize=20,ensemblesizesqrt=2)
             msg += "    shift: %d %d\n" % (shift[0], shift[1])
+            print("    shift: %d %d\n" % (shift[0], shift[1]))
             msg += "time: %0.4f\n" % (time.time()-starttime)
             msg += "Computing output non-flash blocked image\n"
             if not self.skipcalc.value:
@@ -158,23 +170,38 @@ class Tracking_Control():
                 start = np.array([self.startx.value,self.starty.value])
                 end = np.array(out_img.shape)-np.array([self.endx.value,self.endy.value])
                 
-                done = rd.alignandsubtract(out_img,shift,pair[0].img)#,start=start,end=end)
+                done = rd.alignandsubtract(out_img,shift,pair[0].img,start=start,end=end)
                 msg += "time: %0.4f\n" % (time.time()-starttime)
                 
                 maxvals = []
                 for it in range(self.searchcount.value):
                     #print(".")
+                    print(shift)
                     print(done.shape)
                     print(start,end)
-                    print(searchbox)
-                    argmax = done[start[0]-searchbox:end[0]-searchbox,start[1]-searchbox:end[1]-searchbox].argmax()
-                    p = np.array(np.unravel_index(argmax, done.shape))
-                    p+=start-searchbox
-                    
-                    maxval = done[p[0],p[1]]
+                    #print(searchbox)
+                    #smalldone = done[(start[0]-searchbox):(end[0]-searchbox),(start[1]-searchbox):(end[1]-searchbox)]
+                    smalldone = done[(start[0]+searchbox):(end[0]-searchbox),(start[1]+searchbox):(end[1]-searchbox)]
+                    smalldone = done[searchbox:-searchbox,searchbox:-searchbox]
+                    argmax = smalldone.argmax()
+                    print("done shape:")
+                    print(smalldone.shape)
+                    #print("smalldone shape:")
+                    #print(smalldone.shape)
+                    p = np.array(np.unravel_index(argmax,smalldone.shape))
+                    print("p:")
+                    print(p)
+                    p+=start+searchbox #start#-searchbox
+                    print("Shifted p:")
+                    print(p)
+                    try:
+                        maxval = done[p[0],p[1]]
+                    except IndexError:
+                        msg+="  [error (out of range) location EXCEPTION]\n"
+                        continue
                     peak_sample_img = erase_around(done,p[0],p[1])
                     score = score_img(peak_sample_img)
-                    p += searchbox
+                    #p += searchbox
                     if (p[0]>=done.shape[0]) or (p[1]>=done.shape[1]):
                         #print("error (out of range) location")
                         msg+="  [error (out of range) location]\n"
@@ -226,7 +253,7 @@ class Tracking_Control():
             msg += "time: %0.4f\n" % (time.time()-starttime)
             msg += "datetime0: %s\n" % numtotimestring(pair[0].time)
             msg += "datetime1: %s\n" % numtotimestring(pair[1].time)
-            print("Processing Complete")
+            #print("Processing Complete")
             #self.tracking_results.append({'lowresimages':lowresimages,'highresimages':highresimages,'maxvals':maxvals,'shift':shift})
             return ({'lowresimages':lowresimages,'highresimages':highresimages,'maxvals':maxvals,'shift':shift,'msg':msg,'dt0':numtotimestring(pair[0].time),'dt1':numtotimestring(pair[1].time)})
             

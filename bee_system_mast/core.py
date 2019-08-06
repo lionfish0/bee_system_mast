@@ -53,7 +53,7 @@ def startup(exposure,gain,timestring):
     t.start()
     global tracking_controls
     tracking_results = []
-    for i in range(3): #sets of processes analysing the images:
+    for i in range(10): #sets of processes analysing the images:
         tracking_control = Tracking_Control(cam_control.prs,tracking_results)
         t = multiprocessing.Process(target=tracking_control.worker)
         t.start()
@@ -175,13 +175,13 @@ def getsystemstatus():
     global startupdone
     if startupdone:
         msg = ""
-        msg += "Processing Queue: %d\n" % tracking_controls[0].camera_queue.unpopped()
+        msg += "Processing Queue: %d\n" % cam_control.prs.unpopped() #tracking_controls[0].camera_queue.unpopped()
         cpu_usage_string = subprocess.check_output('cat /proc/loadavg', shell=True)
         msg += "CPU Usage:        %s" % cpu_usage_string        
         if len(tracking_controls[0].tracking_results)>0:
             msg += "\n\nDiagnostic Message from last tracking computation\n"
             msg += "<pre>"+tracking_controls[0].tracking_results[-1]['msg']+"</pre>"
-        msg+="\n\n+<pre>"+mem_top()+"</pre>"
+        #msg+="\n\n+<pre>"+mem_top()+"</pre>"
         return msg
     else:
         return "0"
@@ -192,16 +192,16 @@ def getrawtrackingimage(index,img,lowres):
         return "image must be 0 or 1"
     if (index>=len(tracking_controls[0].tracking_results)) or (index<0):
         return "out of range"
-    
+
     if lowres:    
         pair = tracking_controls[0].tracking_results[index]['lowresimages']
     else:
         pair = tracking_controls[0].tracking_results[index]['highresimages']
     trackingresults = []    
-    for i,loc in enumerate(tracking_control.tracking_results[index]['maxvals']):
-        print(i)
+    for i,loc in enumerate(tracking_controls[0].tracking_results[index]['maxvals']):
+        #print(i)
         trackingresults.append([int(loc['location'][0]),int(loc['location'][1]),int(loc['score'])])
-        
+    
     return jsonify({'image':pair[img].astype(int).tolist(),'tracking':trackingresults}) #TODO: add locations from below to JSON object
     
     
